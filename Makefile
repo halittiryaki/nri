@@ -21,8 +21,17 @@ PROTO_OPTIONS = --proto_path=. $(PROTO_INCLUDE) \
     --go-plugin_opt=paths=source_relative,disable_pb_gen=true --go-plugin_out=.
 PROTO_COMPILE = PATH=$(PATH):$(shell go env GOPATH)/bin; protoc $(PROTO_OPTIONS)
 
-GO_CMD     := go
-GO_BUILD   := $(GO_CMD) build
+GO_CMD      := go
+GO_BUILD    := $(GO_CMD) build
+
+# --- FIX: Conditionally add static linking flags to GO_BUILD ---
+# This ensures that when STATIC=1 is passed (e.g., by build-plugins-static),
+# Go binaries are truly statically linked, which is crucial for distroless/static.
+ifdef STATIC
+GO_BUILD += -ldflags "-extldflags=-static -s -w" # -s and -w reduce binary size
+endif
+# --- END FIX ---
+
 GO_INSTALL := $(GO_CMD) install
 GO_TEST    := $(GO_CMD) test
 GO_LINT    := golint -set_exit_status
@@ -48,15 +57,15 @@ BUILD_PATH    := $(RESOLVED_PWD)/build
 BIN_PATH      := $(BUILD_PATH)/bin
 COVERAGE_PATH := $(BUILD_PATH)/coverage
 
-PLUGINS := \
-	$(BIN_PATH)/logger \
-	$(BIN_PATH)/device-injector \
-	$(BIN_PATH)/hook-injector \
-	$(BIN_PATH)/differ \
-	$(BIN_PATH)/ulimit-adjuster \
-	$(BIN_PATH)/v010-adapter \
-	$(BIN_PATH)/template \
-	$(BIN_PATH)/wasm
+PLUGINS ?= \
+	logger \
+	device-injector \
+	hook-injector \
+	differ \
+	ulimit-adjuster \
+	v010-adapter \
+	template \
+	wasm
 
 
 ifneq ($(V),1)
@@ -83,7 +92,10 @@ test: test-gopkgs
 
 build-proto: $(PROTO_GOFILES)
 
-build-plugins: $(PLUGINS)
+build-plugins: $(foreach bin,$(PLUGINS),$(BIN_PATH)/$(bin))
+
+build-plugins-static:
+	$(MAKE) STATIC=1 DEBUG=$(DEBUG) NORACE=$(NORACE) build-plugins
 
 build-check:
 	$(Q)$(GO_BUILD) -v $(GO_MODULES)
